@@ -11,7 +11,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
-from sklearn.model_selection import GridSearchCV, GroupKFold, cross_val_score
+from sklearn.model_selection import GridSearchCV, GroupKFold, cross_val_predict, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -102,6 +102,21 @@ def choose_regularization(numeric: list[str], categorical: list[str], train: pd.
                           scoring="neg_log_loss", cv=GroupKFold(n_splits=5))
     search.fit(train, train["is_goal"], groups=train["match_id"])
     return search.best_params_["logreg__C"]
+
+
+def out_of_fold_xg(df: pd.DataFrame) -> pd.Series:
+    """Un xG pour chaque tir, prédit par un modèle qui n'a pas vu son match.
+
+    5 plis par match : chaque tir est prédit par le modèle entraîné sur les
+    4 autres. Sert aux cartes de tirs et aux bilans par joueur.
+    """
+    numeric = [f for _, n, _ in FEATURE_STEPS for f in n]
+    categorical = [f for _, _, c in FEATURE_STEPS for f in c]
+    model = build_model(numeric, categorical).set_params(
+        logreg__C=choose_regularization(numeric, categorical, df))
+    xg = cross_val_predict(model, df, df["is_goal"], groups=df["match_id"],
+                           cv=GroupKFold(n_splits=5), method="predict_proba")[:, 1]
+    return pd.Series(xg, index=df.index, name="xg")
 
 
 def main():

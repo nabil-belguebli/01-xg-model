@@ -7,7 +7,7 @@ README. Les chiffres cités sortent des fichiers du dossier reports/.
 
 Dernière mise à jour : 25 septembre 2026. Fait : données, features,
 régression logistique, gradient boosting, features avancées (gardien, passe
-décisive, phase de jeu).
+décisive, phase de jeu), figures.
 
 
 ==============================================================================
@@ -529,10 +529,86 @@ nouvelles, toutes tirées des données StatsBomb.
 
 
 ==============================================================================
-8. SUITE DU PROJET
+8. LES FIGURES
 ==============================================================================
 
-  [ ] Figures : courbe de calibration, carte des tirs (mplsoccer)
+Toutes les figures sont dans le dossier figures/ et se régénèrent avec
+src/figures.py. Chaque modèle a toujours la même couleur : logistique en
+bleu, gradient boosting en orange, StatsBomb en vert.
+
+8.1 La courbe de calibration (figures/calibration.png)
+    C'est le tableau de la section 4.6, dessiné. Chaque point est une
+    tranche de tirs : en abscisse l'xG moyen prédit, en ordonnée la part de
+    buts réellement observée. Un modèle parfaitement calibré a tous ses
+    points sur la diagonale grise.
+
+    Les barres verticales autour de chaque point sont des intervalles à
+    95 % : même avec un modèle parfait, une tranche de 136 tirs ne tombe
+    jamais exactement sur la diagonale, par simple hasard (comme 10 lancers
+    de pièce ne donnent pas toujours 5 piles). Tant que la diagonale passe
+    dans la barre, l'écart n'est pas un défaut du modèle.
+
+    Lecture : les trois modèles sont bien calibrés. Tous les trois
+    sous-estiment un peu les plus grosses occasions (dernier point
+    au-dessus de la diagonale), mais les barres touchent la diagonale ou en
+    sont très proches.
+
+8.2 Le log loss étape par étape (figures/log_loss_par_etape.png)
+    La section 7.3 en image. En bleu, la validation croisée descend à chaque
+    étape. En orange, le test suit la même tendance mais zigzague en fin de
+    parcours : c'est le bruit d'un seul jeu de 57 matchs. La ligne grise à
+    gauche est StatsBomb.
+
+8.3 Un xG pour chaque tir : les prédictions hors-pli
+    Pour les cartes, il faut un xG pour chacun des 5 583 tirs, pas seulement
+    pour les 1 362 du test. Mais un modèle ne doit jamais prédire un tir
+    qu'il a vu pendant son entraînement (voir 4.1).
+
+    Solution : on découpe les matchs en 5 groupes, on entraîne sur 4 et on
+    prédit le 5e, cinq fois. Chaque tir reçoit ainsi l'xG d'un modèle qui
+    n'a jamais vu son match. On parle de prédictions hors-pli (« out of
+    fold »). C'est le même mécanisme que la validation croisée, utilisé
+    pour produire des prédictions au lieu d'un score.
+
+8.4 Où l'on marque (figures/carte_xg.png)
+    La moitié de terrain est découpée en cases ; chaque case prend la
+    couleur de l'xG moyen des tirs qui y ont été pris. Les cases de moins
+    de 10 tirs restent vides : une moyenne sur 3 tirs ne veut rien dire.
+
+    Tout se joue dans une zone étroite face au but : devant la cage, dans
+    la surface de but, l'xG moyen dépasse 0,35 ; à l'entrée de la surface,
+    il tombe sous 0,10 ; de loin, il reste sous 0,05.
+
+8.5 La carte des tirs de Kylian Mbappé (figures/carte_tirs_mbappe.png)
+    Ses 51 tirs hors penalty aux Coupes du monde 2018 et 2022. La taille
+    d'un cercle est proportionnelle à l'xG du tir ; les cercles pleins sont
+    des buts.
+
+    Bilan : 10 buts pour 6,1 xG (StatsBomb donne 5,9). Il a marqué environ
+    4 buts de plus que ses occasions ne le laissaient attendre.
+
+    Talent ou chance ? On peut le chiffrer. Imaginons que chaque tir soit
+    un tirage au sort dont la probabilité de but est son xG, et simulons
+    200 000 fois ses 51 tirs. Un joueur « moyen » avec exactement ces
+    occasions marquerait au moins 10 buts dans 5,7 % des simulations.
+    C'est rare, mais pas extraordinaire.
+
+    Et il faut se méfier d'un piège : on a choisi Mbappé justement parce
+    qu'il ressortait. Parmi des centaines de joueurs, quelques-uns
+    dépasseront toujours leur xG de beaucoup, même si tous n'avaient que de
+    la chance. C'est le problème des comparaisons multiples : chercher
+    l'extrême dans une foule garantit d'en trouver un.
+
+    Sur 51 tirs, on ne peut donc pas trancher. Les études sur des saisons
+    entières montrent que la sur-performance durable existe chez quelques
+    finisseurs d'élite, mais qu'elle est plus rare et plus faible que ce que
+    suggèrent des échantillons courts comme celui-ci.
+
+
+==============================================================================
+9. SUITE DU PROJET
+==============================================================================
+
   [ ] Application Streamlit : carte de tirs, joueurs qui sur- ou
       sous-performent leur xG, explication des prédictions (SHAP)
   [ ] Version PDF de ce rapport (Typst)

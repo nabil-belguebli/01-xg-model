@@ -6,6 +6,8 @@ Comparaison avec StatsBomb.
 Les notions et les résultats sont expliqués pas à pas dans
 [`rapport/rapport.txt`](rapport/rapport.txt). Ce README sert à faire tourner le code.
 
+![Courbes de calibration de la logistique, du gradient boosting et de l'xG StatsBomb](figures/calibration.png)
+
 ## Ce qu'il y a dans chaque fichier
 
 | Fichier | Rôle |
@@ -15,12 +17,13 @@ Les notions et les résultats sont expliqués pas à pas dans
 | `src/dataset.py` | Parcourt les matchs, aplatit chaque tir en une ligne, écrit `data/shots.csv` |
 | `src/train.py` | Logistique enrichie feature par feature, métriques, calibration, comparaison à l'xG StatsBomb |
 | `src/boosting.py` | Gradient boosting réglé par validation croisée, bootstrap par match contre la logistique et StatsBomb |
+| `src/figures.py` | Calibration, log loss par étape, carte d'xG, carte de tirs d'un joueur, dans `figures/` |
 | `tests/test_features.py` | Géométrie : une erreur de signe fausse tout sans lever d'exception |
 
 ## Démarrage
 
 ```bash
-cd ~/Documents/projects/01-xg-model
+git clone https://github.com/nabil-belguebli/01-xg-model.git && cd 01-xg-model
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -29,6 +32,7 @@ python src/dataset.py --limit 5        # essai rapide : 5 matchs par compétitio
 python src/dataset.py                  # le jeu complet, compter une dizaine de minutes
 python src/train.py                    # logistique, feature par feature
 python src/boosting.py                 # gradient boosting, une à deux minutes
+python src/figures.py                  # figures/, après train.py et boosting.py
 ```
 
 Le premier téléchargement complet prend un moment : un appel HTTP par match.
@@ -63,7 +67,7 @@ distance et angle ne capturent pas, et justifie les features suivantes.
 - [x] Features catégorielles : partie du corps, situation de jeu, première intention
 - [x] Gradient boosting, comparé à la baseline sur les mêmes métriques
 - [x] Features avancées : gardien, passe décisive, phase de jeu ; régularisation par validation croisée
-- [ ] Carte de tirs avec mplsoccer
+- [x] Figures : calibration, carte de tirs avec mplsoccer
 - [ ] Application Streamlit : carte de tirs, sur/sous-performance des joueurs, SHAP
 - [ ] README final avec la courbe de calibration en première image
 
