@@ -20,9 +20,11 @@ from matplotlib.ticker import FuncFormatter  # noqa: E402
 from mplsoccer import VerticalPitch  # noqa: E402
 
 try:
-    from .train import DATA, REPORTS, out_of_fold_xg
+    from .explain import CATEGORICAL, LABELS, NUMERIC, out_of_fold_explanations, sigmoid
+    from .train import DATA, REPORTS
 except ImportError:  # python src/figures.py
-    from train import DATA, REPORTS, out_of_fold_xg
+    from explain import CATEGORICAL, LABELS, NUMERIC, out_of_fold_explanations, sigmoid
+    from train import DATA, REPORTS
 
 FIGURES = Path(__file__).resolve().parent.parent / "figures"
 
@@ -38,6 +40,41 @@ MODELS = [  # (colonne, libellé, couleur)
     ("xg_boosting", "Gradient boosting", "#eb6834"),
     ("xg_statsbomb", "xG StatsBomb", "#1baf7a"),
 ]
+INCREASE, DECREASE = "#2a78d6", "#e34948"  # paire divergente bleu / rouge
+
+CATEGORIES_FR = {
+    "Head": "Tête", "Left Foot": "Pied gauche", "Right Foot": "Pied droit", "Other": "Autre",
+    "Normal": "Frappe normale", "Volley": "Volée", "Half Volley": "Demi-volée", "Lob": "Lob",
+    "Backheel": "Talonnade", "Diving Header": "Tête plongeante", "Overhead Kick": "Retourné",
+    "Open Play": "Jeu courant", "Free Kick": "Coup franc direct", "Corner": "Corner direct",
+    "Kick Off": "Engagement", "Ground Pass": "Au sol", "Low Pass": "Basse", "High Pass": "Haute",
+    "Regular Play": "Attaque placée", "From Counter": "Contre-attaque", "From Corner": "Après corner",
+    "From Free Kick": "Après coup franc", "From Throw In": "Après touche",
+    "From Goal Kick": "Après 6 mètres", "From Keeper": "Relance du gardien",
+    "From Kick Off": "Après engagement",
+}
+
+
+def fr(value) -> str:
+    return CATEGORIES_FR.get(value, value)
+
+
+def number(value: float, decimals: int = 1) -> str:
+    return f"{value:.{decimals}f}".replace(".", ",")
+
+
+def describe(feature: str, value) -> str:
+    """Valeur lisible d'une feature pour un tir."""
+    if feature in CATEGORICAL:
+        return fr(value)
+    if isinstance(value, (bool, np.bool_)):
+        return "oui" if value else "non"
+    if feature == "angle":
+        return f"{number(np.degrees(value), 0)}°"
+    if feature == "defenders_in_triangle":
+        return str(int(value))
+    return number(value)
+
 BLUE_RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 
 plt.rcParams.update({
@@ -197,6 +234,55 @@ def shot_map(shots: pd.DataFrame, player: str, title: str, path: Path) -> None:
     plt.close(fig)
 
 
+def draw_explanation(shot: pd.Series, top: int = 7):
+    """Du tir moyen à l'xG du tir : ce que chaque feature ajoute ou retire."""
+    contributions = pd.Series({f: shot[f"contrib__{f}"] for f in NUMERIC + CATEGORICAL})
+    order = contributions.abs().sort_values(ascending=False).index
+    kept, rest = order[:top], order[top:]
+
+    steps = [(f"{LABELS[f]} : {describe(f, shot[f])}", contributions[f]) for f in kept]
+    if len(rest):
+        steps.append((f"{len(rest)} autres features", contributions[rest].sum()))
+
+    logit = shot["base_logit"]
+    rows = [("Tir moyen", None, sigmoid(logit), sigmoid(logit))]
+    for label, delta in steps:
+        before, logit = sigmoid(logit), logit + delta
+        rows.append((label, delta, before, sigmoid(logit)))
+    rows.append(("xG de ce tir", None, sigmoid(logit), sigmoid(logit)))
+
+    fig, ax = plt.subplots(figsize=(5.6, 0.42 * len(rows) + 0.9))
+    fig.patch.set_facecolor(SURFACE)
+    ax.set_facecolor(SURFACE)
+    y = np.arange(len(rows))[::-1]
+    right = max(max(r[2], r[3]) for r in rows)
+
+    for yi, (label, delta, before, after) in zip(y, rows):
+        if delta is None:
+            ax.scatter([after], [yi], s=60, color=INK, zorder=3)
+            ax.text(after + right * 0.02, yi, number(after, 2), va="center", color=INK, fontsize=12,
+                    fontweight="bold")
+            continue
+        color = INCREASE if after >= before else DECREASE
+        ax.barh(yi, after - before, left=before, height=0.55, color=color, zorder=2)
+        sign = "+" if after >= before else "−"
+        ax.text(max(before, after) + right * 0.02, yi, f"{sign}{number(abs(after - before), 3)}",
+                va="center", color=INK_SECONDARY, fontsize=11)
+
+    ax.set_yticks(y, [r[0] for r in rows], color=INK, fontsize=12)
+    ax.set_xlim(0, right * 1.18)
+    ax.xaxis.set_major_formatter(french(1 if right > 0.5 else 2))  # graduations 0,05 sous 0,5
+    ax.set_xlabel("Probabilité de but", color=INK_SECONDARY, fontsize=11)
+    ax.grid(True, axis="x")
+    ax.set_axisbelow(True)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    ax.tick_params(axis="y", length=0)
+    ax.tick_params(axis="x", colors=MUTED, labelcolor=INK_SECONDARY, labelsize=11)
+    fig.tight_layout()
+    return fig
+
+
 def xg_map(shots: pd.DataFrame, path: Path, min_shots: int = 10) -> None:
     """xG moyen par zone. Zones de moins de 10 tirs laissées vides : trop peu pour une moyenne."""
     pitch = VerticalPitch(pitch_type="statsbomb", half=True, pitch_color=SURFACE,
@@ -234,10 +320,18 @@ def main():
 
     df = pd.read_csv(DATA)
     shots = df[df["shot_type"] != "Penalty"].copy()
-    shots["xg"] = out_of_fold_xg(shots)
+    shots = pd.concat([shots, out_of_fold_explanations(shots)], axis=1)
     shot_map(shots, "Kylian Mbappé Lottin", "Kylian Mbappé, Coupes du monde 2018 et 2022",
              FIGURES / "carte_tirs_mbappe.png")
     xg_map(shots, FIGURES / "carte_xg.png")
+
+    # Un but de Mbappé à l'xG modeste : des features qui poussent dans les deux sens.
+    goals = shots[(shots["player"] == "Kylian Mbappé Lottin") & (shots["is_goal"] == 1)]
+    shot = goals.loc[(goals["xg"] - 0.15).abs().idxmin()]
+    fig = draw_explanation(shot)
+    fig.savefig(FIGURES / "explication_tir.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"tir expliqué : {shot['competition']}, {int(shot['minute']) + 1}e minute, xG {shot['xg']:.2f}")
 
     print(f"figures écrites dans {FIGURES}")
 

@@ -13,49 +13,12 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from explain import CATEGORICAL, LABELS, NUMERIC, sigmoid
-from figures import INK, INK_SECONDARY, MUTED, SURFACE, draw_shot_map, french
+from figures import draw_explanation, draw_shot_map, fr, number
 from overperformance import expected_false_alarms, player_table
 
 ROOT = Path(__file__).resolve().parent.parent
 SHOTS = ROOT / "data" / "app_shots.csv"
 REPO = "https://github.com/nabil-belguebli/01-xg-model"
-
-INCREASE, DECREASE = "#2a78d6", "#e34948"  # paire divergente bleu / rouge
-
-CATEGORIES_FR = {
-    "Head": "Tête", "Left Foot": "Pied gauche", "Right Foot": "Pied droit", "Other": "Autre",
-    "Normal": "Frappe normale", "Volley": "Volée", "Half Volley": "Demi-volée", "Lob": "Lob",
-    "Backheel": "Talonnade", "Diving Header": "Tête plongeante", "Overhead Kick": "Retourné",
-    "Open Play": "Jeu courant", "Free Kick": "Coup franc direct", "Corner": "Corner direct",
-    "Kick Off": "Engagement", "Ground Pass": "Au sol", "Low Pass": "Basse", "High Pass": "Haute",
-    "Regular Play": "Attaque placée", "From Counter": "Contre-attaque", "From Corner": "Après corner",
-    "From Free Kick": "Après coup franc", "From Throw In": "Après touche",
-    "From Goal Kick": "Après 6 mètres", "From Keeper": "Relance du gardien",
-    "From Kick Off": "Après engagement",
-}
-
-
-def fr(value) -> str:
-    return CATEGORIES_FR.get(value, value)
-
-
-def number(value: float, decimals: int = 1) -> str:
-    return f"{value:.{decimals}f}".replace(".", ",")
-
-
-def describe(feature: str, value) -> str:
-    """Valeur lisible d'une feature pour un tir."""
-    if feature in CATEGORICAL:
-        return fr(value)
-    if isinstance(value, (bool, np.bool_)):
-        return "oui" if value else "non"
-    if feature == "angle":
-        return f"{number(np.degrees(value), 0)}°"
-    if feature == "defenders_in_triangle":
-        return str(int(value))
-    return number(value)
-
 
 @st.cache_data
 def load_shots() -> pd.DataFrame:
@@ -66,55 +29,6 @@ def load_shots() -> pd.DataFrame:
 def players(shots: pd.DataFrame, min_shots: int) -> tuple[pd.DataFrame, float]:
     table = player_table(shots, min_shots)
     return table, expected_false_alarms(shots, table)
-
-
-def waterfall(shot: pd.Series, top: int = 7):
-    """Du tir moyen à l'xG du tir : ce que chaque feature ajoute ou retire."""
-    contributions = pd.Series({f: shot[f"contrib__{f}"] for f in NUMERIC + CATEGORICAL})
-    order = contributions.abs().sort_values(ascending=False).index
-    kept, rest = order[:top], order[top:]
-
-    steps = [(f"{LABELS[f]} : {describe(f, shot[f])}", contributions[f]) for f in kept]
-    if len(rest):
-        steps.append((f"{len(rest)} autres features", contributions[rest].sum()))
-
-    logit = shot["base_logit"]
-    rows = [("Tir moyen", None, sigmoid(logit), sigmoid(logit))]
-    for label, delta in steps:
-        before, logit = sigmoid(logit), logit + delta
-        rows.append((label, delta, before, sigmoid(logit)))
-    rows.append(("xG de ce tir", None, sigmoid(logit), sigmoid(logit)))
-
-    fig, ax = plt.subplots(figsize=(5.6, 0.42 * len(rows) + 0.9))
-    fig.patch.set_facecolor(SURFACE)
-    ax.set_facecolor(SURFACE)
-    y = np.arange(len(rows))[::-1]
-    right = max(max(r[2], r[3]) for r in rows)
-
-    for yi, (label, delta, before, after) in zip(y, rows):
-        if delta is None:
-            ax.scatter([after], [yi], s=60, color=INK, zorder=3)
-            ax.text(after + right * 0.02, yi, number(after, 2), va="center", color=INK, fontsize=12,
-                    fontweight="bold")
-            continue
-        color = INCREASE if after >= before else DECREASE
-        ax.barh(yi, after - before, left=before, height=0.55, color=color, zorder=2)
-        sign = "+" if after >= before else "−"
-        ax.text(max(before, after) + right * 0.02, yi, f"{sign}{number(abs(after - before), 3)}",
-                va="center", color=INK_SECONDARY, fontsize=11)
-
-    ax.set_yticks(y, [r[0] for r in rows], color=INK, fontsize=12)
-    ax.set_xlim(0, right * 1.18)
-    ax.xaxis.set_major_formatter(french(1))
-    ax.set_xlabel("Probabilité de but", color=INK_SECONDARY, fontsize=11)
-    ax.grid(True, axis="x", color="#e1e0d9", linewidth=1)
-    ax.set_axisbelow(True)
-    for side in ("top", "right", "left"):
-        ax.spines[side].set_visible(False)
-    ax.tick_params(axis="y", length=0)
-    ax.tick_params(axis="x", colors=MUTED, labelcolor=INK_SECONDARY, labelsize=11)
-    fig.tight_layout()
-    return fig
 
 
 def tab_players(shots: pd.DataFrame):
@@ -174,7 +88,7 @@ def tab_shots(shots: pd.DataFrame):
 
     listing = pd.DataFrame({
         "Compétition": player_shots["competition"],
-        "Minute": player_shots["minute"],
+        "Minute": player_shots["minute"] + 1,  # StatsBomb compte les minutes écoulées
         "Partie du corps": player_shots["body_part"].map(fr),
         "Passe décisive": player_shots["assist_type"],
         "xG": player_shots["xg"],
@@ -198,9 +112,9 @@ def tab_shots(shots: pd.DataFrame):
         plt.close(fig)
     with right:
         result = "but" if shot["is_goal"] == 1 else "non marqué"
-        st.markdown(f"**Tir entouré** : {shot['competition']}, {int(shot['minute'])}e minute, "
+        st.markdown(f"**Tir entouré** : {shot['competition']}, {int(shot['minute']) + 1}e minute, "
                     f"{fr(shot['body_part']).lower()}, {result}. xG **{number(shot['xg'], 2)}**.")
-        fig = waterfall(shot)
+        fig = draw_explanation(shot)
         st.pyplot(fig)
         plt.close(fig)
         st.caption(

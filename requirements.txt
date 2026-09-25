@@ -6,3 +6,4 @@ matplotlib>=3.7
 mplsoccer>=1.2
 pytest>=7.4
 streamlit>=1.40
+typst>=0.13               # rapport/build.py
