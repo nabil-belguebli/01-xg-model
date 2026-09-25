@@ -10,8 +10,8 @@ Les notions et les résultats sont expliqués pas à pas dans
 
 | Fichier | Rôle |
 | --- | --- |
-| `src/statsbomb.py` | Télécharge les JSON du dépôt open-data et les met en cache dans `data/raw/` |
-| `src/features.py` | Distance, angle entre les poteaux, défenseurs dans le triangle de tir |
+| `src/statsbomb.py` | Télécharge les JSON du dépôt open-data, les met en cache dans `data/raw/`, associe chaque tir à sa passe décisive |
+| `src/features.py` | Distance, angle, défenseurs dans le triangle, gardien, défenseur le plus proche, passe décisive |
 | `src/dataset.py` | Parcourt les matchs, aplatit chaque tir en une ligne, écrit `data/shots.csv` |
 | `src/train.py` | Logistique enrichie feature par feature, métriques, calibration, comparaison à l'xG StatsBomb |
 | `src/boosting.py` | Gradient boosting réglé par validation croisée, bootstrap par match contre la logistique et StatsBomb |
@@ -24,7 +24,7 @@ cd ~/Documents/projects/01-xg-model
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-python tests/test_features.py          # 9 tests, doit passer avant tout le reste
+python tests/test_features.py          # 12 tests, doit passer avant tout le reste
 python src/dataset.py --limit 5        # essai rapide : 5 matchs par compétition
 python src/dataset.py                  # le jeu complet, compter une dizaine de minutes
 python src/train.py                    # logistique, feature par feature
@@ -62,6 +62,7 @@ distance et angle ne capturent pas, et justifie les features suivantes.
 - [x] Baseline logistique, métriques, calibration
 - [x] Features catégorielles : partie du corps, situation de jeu, première intention
 - [x] Gradient boosting, comparé à la baseline sur les mêmes métriques
+- [x] Features avancées : gardien, passe décisive, phase de jeu ; régularisation par validation croisée
 - [ ] Carte de tirs avec mplsoccer
 - [ ] Application Streamlit : carte de tirs, sur/sous-performance des joueurs, SHAP
 - [ ] README final avec la courbe de calibration en première image

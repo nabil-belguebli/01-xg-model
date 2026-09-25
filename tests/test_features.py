@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from features import (  # noqa: E402
     _in_shot_triangle,
+    assist_features,
     distance_to_goal,
     freeze_frame_features,
     shot_angle,
@@ -67,12 +68,41 @@ def test_freeze_frame_compte_les_adversaires():
 
     assert out["defenders_in_triangle"] == 2  # gardien compté comme défenseur
     assert out["has_freeze_frame"]
+    assert out["keeper_visible"]
+    assert math.isclose(out["keeper_to_goal"], 2.0)  # gardien en (118, 40)
+    assert math.isclose(out["keeper_to_shooter"], 18.0)
+    assert math.isclose(out["nearest_defender"], 14.0)  # le coéquipier ne compte pas
 
 
 def test_freeze_frame_absent():
     out = freeze_frame_features({"shot": {}}, x=100.0, y=40.0)
     assert out["defenders_in_triangle"] == 0
     assert not out["has_freeze_frame"]
+    assert not out["keeper_visible"]
+    assert math.isnan(out["keeper_to_goal"])
+    assert math.isnan(out["nearest_defender"])
+
+
+def test_sans_passe_decisive():
+    assert assist_features(None) == {"assist_type": "Aucune", "assist_height": "Aucune"}
+
+
+def test_type_de_passe_du_plus_specifique_au_moins_specifique():
+    """Un centre en retrait est une passe en retrait ; un corner centré, un centre."""
+    cut_back_cross = {"pass": {"cut_back": True, "cross": True, "height": {"name": "Ground Pass"}}}
+    corner = {"pass": {"cross": True, "type": {"name": "Corner"}, "height": {"name": "High Pass"}}}
+    short_corner = {"pass": {"type": {"name": "Corner"}, "height": {"name": "Ground Pass"}}}
+
+    assert assist_features(cut_back_cross)["assist_type"] == "En retrait"
+    assert assist_features(corner) == {"assist_type": "Centre", "assist_height": "High Pass"}
+    assert assist_features(short_corner)["assist_type"] == "Coup de pied arrêté"
+
+
+def test_passe_decisive_ignore_lissue_du_tir():
+    """goal_assist n'existe que si le tir est un but : l'utiliser ferait fuiter la réponse."""
+    with_goal = {"pass": {"goal_assist": True, "height": {"name": "Ground Pass"}}}
+    without_goal = {"pass": {"shot_assist": True, "height": {"name": "Ground Pass"}}}
+    assert assist_features(with_goal) == assist_features(without_goal)
 
 
 if __name__ == "__main__":

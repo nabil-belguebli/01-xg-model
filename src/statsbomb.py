@@ -45,5 +45,12 @@ def events(match_id: int) -> list[dict]:
     return _get(f"{BASE}/events/{match_id}.json", CACHE / "events" / f"{match_id}.json")
 
 
-def shots(match_id: int) -> list[dict]:
-    return [e for e in events(match_id) if e.get("type", {}).get("name") == "Shot"]
+def shots(match_id: int) -> list[tuple[dict, dict | None]]:
+    """Chaque tir avec sa passe décisive (None s'il n'y en a pas)."""
+    match_events = events(match_id)
+    by_id = {e["id"]: e for e in match_events}
+    return [
+        (e, by_id.get(e.get("shot", {}).get("key_pass_id")))
+        for e in match_events
+        if e.get("type", {}).get("name") == "Shot"
+    ]

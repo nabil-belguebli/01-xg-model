@@ -35,8 +35,8 @@ def build(competitions=COMPETITIONS, limit_matches: int | None = None) -> pd.Dat
 
         for i, game in enumerate(games, 1):
             match_id = game["match_id"]
-            for shot in statsbomb.shots(match_id):
-                row = shot_to_row(shot, match_id)
+            for shot, key_pass in statsbomb.shots(match_id):
+                row = shot_to_row(shot, match_id, key_pass)
                 row["competition"] = label
                 rows.append(row)
             if i % 10 == 0:

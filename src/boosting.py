@@ -14,19 +14,19 @@ from sklearn.model_selection import GridSearchCV, GroupKFold
 
 try:
     from .train import (DATA, FEATURE_STEPS, REPORTS, build_model, calibration_table,
-                        evaluate, split_by_match)
+                        choose_regularization, evaluate, split_by_match)
 except ImportError:  # python src/boosting.py
     from train import (DATA, FEATURE_STEPS, REPORTS, build_model, calibration_table,
-                       evaluate, split_by_match)
+                       choose_regularization, evaluate, split_by_match)
 
 NUMERIC = [f for _, numeric, _ in FEATURE_STEPS for f in numeric]
 CATEGORICAL = [f for _, _, categorical in FEATURE_STEPS for f in categorical]
 
-# Peu de données (4 200 tirs) : la grille descend jusqu'à des arbres à 3 feuilles.
+# Peu de données (4 200 tirs) : la grille descend jusqu'aux souches (arbres à 2 feuilles).
 PARAM_GRID = {
     "learning_rate": [0.02, 0.05, 0.1],
     "max_iter": [50, 100, 200, 400],
-    "max_leaf_nodes": [3, 7, 15],
+    "max_leaf_nodes": [2, 3, 7, 15],
     "min_samples_leaf": [20, 50, 100],
 }
 
@@ -34,7 +34,7 @@ PARAM_GRID = {
 def to_boosting_input(df: pd.DataFrame, categories: dict[str, list]) -> pd.DataFrame:
     """Catégorielles en dtype category, avec les mêmes modalités en train et en test."""
     X = df[NUMERIC + CATEGORICAL].copy()
-    for column in ["first_time", "under_pressure"]:
+    for column in X.columns[X.dtypes == bool]:
         X[column] = X[column].astype(int)
     for column in CATEGORICAL:
         X[column] = pd.Categorical(X[column], categories=categories[column])
@@ -90,7 +90,8 @@ def main():
     X_train, X_test = to_boosting_input(train, categories), to_boosting_input(test, categories)
 
     boosting = tune(X_train, train["is_goal"], train["match_id"])
-    logistic = build_model(NUMERIC, CATEGORICAL).fit(train, train["is_goal"])
+    C = choose_regularization(NUMERIC, CATEGORICAL, train)
+    logistic = build_model(NUMERIC, CATEGORICAL).set_params(logreg__C=C).fit(train, train["is_goal"])
 
     predictions = pd.DataFrame({
         "match_id": test["match_id"],

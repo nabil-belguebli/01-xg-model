@@ -48,23 +48,75 @@ def _in_shot_triangle(px: float, py: float, sx: float, sy: float) -> bool:
 
 
 def freeze_frame_features(shot: dict, x: float, y: float) -> dict:
-    """Adversaires dans le triangle de tir. Gardien compté comme un défenseur."""
+    """Adversaires dans le triangle de tir (gardien compris), gardien, défenseur le plus proche.
+
+    Gardien absent du freeze frame : hors du champ de la caméra, donc loin de
+    son but. Ses distances valent alors NaN, et keeper_visible le signale.
+    """
     frame = shot.get("shot", {}).get("freeze_frame") or []
+    opponents = [p for p in frame if not p.get("teammate", True)]
 
     defenders_in_triangle = sum(
-        1 for p in frame
-        if not p.get("teammate", True)
-        and _in_shot_triangle(p["location"][0], p["location"][1], x, y)
+        1 for p in opponents if _in_shot_triangle(p["location"][0], p["location"][1], x, y)
+    )
+
+    keeper = next((p for p in opponents if p.get("position", {}).get("name") == "Goalkeeper"), None)
+    if keeper:
+        kx, ky = keeper["location"][0], keeper["location"][1]
+        keeper_to_goal = distance_to_goal(kx, ky)  # sorti de sa ligne ?
+        keeper_to_shooter = math.hypot(kx - x, ky - y)  # face à face ?
+    else:
+        keeper_to_goal = keeper_to_shooter = math.nan
+
+    field_players = [p for p in opponents if p is not keeper]
+    nearest_defender = min(
+        (math.hypot(p["location"][0] - x, p["location"][1] - y) for p in field_players),
+        default=math.nan,
     )
 
     return {
         "defenders_in_triangle": defenders_in_triangle,
+        "keeper_visible": keeper is not None,
+        "keeper_to_goal": keeper_to_goal,
+        "keeper_to_shooter": keeper_to_shooter,
+        "nearest_defender": nearest_defender,
         "has_freeze_frame": len(frame) > 0,
     }
 
 
-def shot_to_row(shot: dict, match_id: int) -> dict:
-    """Événement Shot -> une ligne de tableau."""
+def assist_features(key_pass: dict | None) -> dict:
+    """La passe qui a amené le tir. Aucune : récupération, dribble, coup franc direct...
+
+    Un seul libellé par passe, du plus au moins spécifique. goal_assist et
+    shot_assist sont ignorés : ils décrivent l'issue du tir, pas la passe.
+    """
+    if key_pass is None:
+        return {"assist_type": "Aucune", "assist_height": "Aucune"}
+
+    details = key_pass.get("pass", {})
+    if details.get("through_ball"):
+        assist_type = "Profondeur"
+    elif details.get("cut_back"):
+        assist_type = "En retrait"
+    elif details.get("cross"):
+        assist_type = "Centre"
+    elif details.get("type", {}).get("name") in ("Corner", "Free Kick", "Throw-in"):
+        assist_type = "Coup de pied arrêté"
+    else:
+        assist_type = "Autre passe"
+
+    return {
+        "assist_type": assist_type,
+        "assist_height": details.get("height", {}).get("name", "Aucune"),
+    }
+
+
+def shot_to_row(shot: dict, match_id: int, key_pass: dict | None = None) -> dict:
+    """Événement Shot -> une ligne de tableau.
+
+    Seulement ce qui est connu au moment de la frappe : end_location,
+    deflected, saved_to_post... décrivent l'issue et feraient fuiter la réponse.
+    """
     x, y = shot["location"][0], shot["location"][1]
     details = shot.get("shot", {})
 
@@ -83,8 +135,13 @@ def shot_to_row(shot: dict, match_id: int) -> dict:
         "shot_type": details.get("type", {}).get("name"),
         "under_pressure": bool(shot.get("under_pressure", False)),
         "first_time": bool(details.get("first_time", False)),
+        "play_pattern": shot.get("play_pattern", {}).get("name"),
+        "one_on_one": bool(details.get("one_on_one", False)),
+        "open_goal": bool(details.get("open_goal", False)),
+        "aerial_won": bool(details.get("aerial_won", False)),
         "statsbomb_xg": details.get("statsbomb_xg"),
         "is_goal": int(details.get("outcome", {}).get("name") == "Goal"),
     }
     row.update(freeze_frame_features(shot, x, y))
+    row.update(assist_features(key_pass))
     return row

@@ -8,8 +8,10 @@ import numpy as np
 import pandas as pd
 from sklearn.calibration import calibration_curve
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
+from sklearn.model_selection import GridSearchCV, GroupKFold, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -26,6 +28,11 @@ FEATURE_STEPS = [
     ("+ type de tir", [], ["shot_type", "technique"]),
     ("+ première intention, pression", ["first_time", "under_pressure"], []),
     ("+ défenseurs dans le triangle", ["defenders_in_triangle"], []),
+    ("+ position du gardien", ["keeper_to_goal", "keeper_to_shooter"], []),
+    ("+ défenseur le plus proche", ["nearest_defender"], []),
+    ("+ passe décisive", [], ["assist_type", "assist_height"]),
+    ("+ face-à-face, but vide", ["one_on_one", "open_goal"], []),
+    ("+ phase de jeu, duel aérien", ["aerial_won"], ["play_pattern"]),
 ]
 
 
@@ -67,10 +74,12 @@ def calibration_table(y_true, y_prob, n_bins: int = 10) -> pd.DataFrame:
 def build_model(numeric: list[str], categorical: list[str]) -> Pipeline:
     """Numériques centrées-réduites, catégorielles en one-hot.
 
+    Gardien hors du freeze frame (2 tirs) : distances remplacées par la médiane.
     Les catégories de moins de 20 tirs (lob, retourné...) sont regroupées :
     un coefficient estimé sur 3 tirs ne serait que du bruit.
     """
-    columns = [("num", StandardScaler(), numeric)]
+    columns = [("num", Pipeline([("impute", SimpleImputer(strategy="median")),
+                                 ("scale", StandardScaler())]), numeric)]
     if categorical:
         columns.append(("cat", OneHotEncoder(min_frequency=20, handle_unknown="infrequent_if_exist",
                                              sparse_output=False), categorical))
@@ -78,6 +87,21 @@ def build_model(numeric: list[str], categorical: list[str]) -> Pipeline:
         ("prep", ColumnTransformer(columns)),
         ("logreg", LogisticRegression(max_iter=1000)),
     ])
+
+
+def cv_log_loss(model: Pipeline, train: pd.DataFrame) -> float:
+    """Log loss moyen sur 5 plis du train, groupés par match. Le test n'est pas touché."""
+    scores = cross_val_score(model, train, train["is_goal"], groups=train["match_id"],
+                             cv=GroupKFold(n_splits=5), scoring="neg_log_loss")
+    return -scores.mean()
+
+
+def choose_regularization(numeric: list[str], categorical: list[str], train: pd.DataFrame) -> float:
+    """C petit = coefficients retenus près de 0. Choisi par validation croisée, jamais sur le test."""
+    search = GridSearchCV(build_model(numeric, categorical), {"logreg__C": [0.01, 0.03, 0.1, 0.3, 1.0]},
+                          scoring="neg_log_loss", cv=GroupKFold(n_splits=5))
+    search.fit(train, train["is_goal"], groups=train["match_id"])
+    return search.best_params_["logreg__C"]
 
 
 def main():
@@ -97,16 +121,23 @@ def main():
                                                     test.loc[has_reference, "statsbomb_xg"],
                                                     "xG officiel StatsBomb")
 
+    all_numeric = [f for _, numeric, _ in FEATURE_STEPS for f in numeric]
+    all_categorical = [f for _, _, categorical in FEATURE_STEPS for f in categorical]
+    C = choose_regularization(all_numeric, all_categorical, train)
+    print(f"\nRégularisation retenue par validation croisée : C = {C}")
+
     numeric, categorical = [], []
     probabilities = {}
     for label, new_numeric, new_categorical in FEATURE_STEPS:
         numeric, categorical = numeric + new_numeric, categorical + new_categorical
-        model = build_model(numeric, categorical)
+        model = build_model(numeric, categorical).set_params(logreg__C=C)
+        cv_score = cv_log_loss(model, train)
         model.fit(train, train["is_goal"])
         probabilities[label] = model.predict_proba(test)[:, 1]
-        results[label] = evaluate(test["is_goal"], probabilities[label], f"Logistique : {label}")
+        results[label] = {"log_loss_cv": cv_score,
+                          **evaluate(test["is_goal"], probabilities[label], f"Logistique : {label}")}
 
-    print("\nRécapitulatif (plus bas = mieux, sauf AUC)")
+    print("\nRécapitulatif (plus bas = mieux, sauf AUC). log_loss_cv : validation croisée sur le train")
     summary = pd.DataFrame(results).T
     print(summary.to_string(float_format=lambda v: f"{v:.4f}"))
 
