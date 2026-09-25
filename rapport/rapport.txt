@@ -7,7 +7,7 @@ README. Les chiffres cités sortent des fichiers du dossier reports/.
 
 Dernière mise à jour : 25 septembre 2026. Fait : données, features,
 régression logistique, gradient boosting, features avancées (gardien, passe
-décisive, phase de jeu), figures.
+décisive, phase de jeu), figures, application.
 
 
 ==============================================================================
@@ -606,11 +606,80 @@ bleu, gradient boosting en orange, StatsBomb en vert.
 
 
 ==============================================================================
-9. SUITE DU PROJET
+9. L'APPLICATION
 ==============================================================================
 
-  [ ] Application Streamlit : carte de tirs, joueurs qui sur- ou
-      sous-performent leur xG, explication des prédictions (SHAP)
+L'application (src/app.py, lancée avec Streamlit) permet d'explorer le modèle
+sans écrire de code. Elle a trois onglets : les joueurs, les tirs d'un joueur,
+et le modèle lui-même. Tous les xG affichés sont des prédictions hors-pli
+(8.3) : aucun tir n'est jugé par un modèle qui a vu son match.
+
+9.1 Talent ou chance, pour tous les joueurs
+    La section 8.5 simulait 200 000 fois les tirs de Mbappé. L'application
+    fait le même calcul pour chaque joueur, mais de façon exacte, sans
+    simulation.
+
+    Si chaque tir est un tirage au sort de probabilité égale à son xG, le
+    nombre de buts suit une loi dite de Poisson-binomiale : une somme de
+    tirages indépendants, chacun avec sa propre probabilité. On la calcule
+    tir par tir. Avant le premier tir, 0 but avec probabilité 1. Chaque
+    nouveau tir, de probabilité p, décale une part p de chaque cas vers
+    « un but de plus » et laisse le reste en place. Après 51 tirs, on a la
+    probabilité exacte de chaque total de 0 à 51 buts.
+
+    La « probabilité de hasard » d'un joueur est alors la probabilité d'un
+    écart au moins aussi grand que le sien, dans le même sens : au moins
+    autant de buts s'il sur-performe, au plus autant s'il sous-performe.
+    Pour Mbappé, le calcul exact donne 5,7 %, comme la simulation.
+
+9.2 Combien de « fausses alertes » attendre
+    L'application affiche aussi combien de joueurs auraient une probabilité
+    sous 5 % si tous n'avaient que de la chance. Ce nombre se calcule
+    exactement lui aussi : pour chaque joueur, on additionne la probabilité
+    de tous les totaux de buts qui le feraient passer sous 5 %.
+
+    Parmi les 137 joueurs qui ont au moins 10 tirs, 7 sont sous 5 %. Le
+    hasard seul en produirait environ 4. L'excès est faible : sur ces
+    tournois, il n'y a presque pas de trace de talent de finition
+    mesurable. C'est la réponse chiffrée au piège des comparaisons
+    multiples (8.5). Il ne suffit pas de trouver des joueurs qui dépassent
+    leur xG ; il faut qu'il y en ait nettement plus que ce que le hasard
+    fabrique tout seul.
+
+9.3 Expliquer un tir : les valeurs SHAP
+    Pourquoi ce tir vaut-il 0,98 xG et celui-là 0,03 ? Les valeurs SHAP
+    répondent en répartissant la prédiction entre les features. On part du
+    « tir moyen » (xG 0,06), puis chaque feature ajoute ou retire quelque
+    chose selon que sa valeur est au-dessus ou en dessous de la moyenne.
+
+    Pour une régression logistique, cette répartition a une formule
+    exacte : la contribution d'une feature est son coefficient multiplié
+    par l'écart entre sa valeur pour ce tir et sa valeur moyenne. Les
+    contributions s'additionnent sur l'échelle du score (5.1, avant la
+    sigmoïde) ; la somme redonne exactement l'xG du tir, et un test
+    automatique le vérifie. La bibliothèque shap calculerait les mêmes
+    nombres ; on s'en passe.
+
+    Pour les features en one-hot (5.2), on additionne les contributions de
+    toutes leurs colonnes : on lit « Partie du corps : tête » et non trois
+    lignes séparées.
+
+    Exemple : le tir de Mbappé à 0,98 xG (Coupe du monde 2018). Partant de
+    0,06, l'angle de 150° l'emmène à 0,74, la distance de 1,4 unité à 0,87,
+    le but vide à 0,93, et le reste des features fait le complément.
+
+    Une subtilité : les contributions s'additionnent en score, pas en
+    probabilité. Le graphique les convertit en probabilité étape par étape,
+    dans l'ordre affiché (de la plus forte à la plus faible). Dans un autre
+    ordre, les barres n'auraient pas exactement la même longueur, mais le
+    point d'arrivée serait le même.
+
+
+==============================================================================
+10. SUITE DU PROJET
+==============================================================================
+
+  [ ] README final
   [ ] Version PDF de ce rapport (Typst)
 
 

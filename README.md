@@ -18,7 +18,12 @@ Les notions et les résultats sont expliqués pas à pas dans
 | `src/train.py` | Logistique enrichie feature par feature, métriques, calibration, comparaison à l'xG StatsBomb |
 | `src/boosting.py` | Gradient boosting réglé par validation croisée, bootstrap par match contre la logistique et StatsBomb |
 | `src/figures.py` | Calibration, log loss par étape, carte d'xG, carte de tirs d'un joueur, dans `figures/` |
+| `src/explain.py` | xG hors-pli de chaque tir et contribution de chaque feature (valeurs SHAP exactes de la logistique) |
+| `src/overperformance.py` | Probabilité qu'un écart buts − xG soit dû au hasard, fausses alertes attendues |
+| `src/app_data.py` | Prépare `data/app_shots.csv` pour l'application |
+| `src/app.py` | Application Streamlit : joueurs, cartes de tirs, explication d'un tir |
 | `tests/test_features.py` | Géométrie : une erreur de signe fausse tout sans lever d'exception |
+| `tests/test_model.py` | Les contributions retombent sur l'xG, loi du nombre de buts, test du hasard |
 
 ## Démarrage
 
@@ -27,7 +32,7 @@ git clone https://github.com/nabil-belguebli/01-xg-model.git && cd 01-xg-model
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-python tests/test_features.py          # 12 tests, doit passer avant tout le reste
+python -m pytest tests                 # 21 tests, doivent passer avant tout le reste
 python src/dataset.py --limit 5        # essai rapide : 5 matchs par compétition
 python src/dataset.py                  # le jeu complet, compter une dizaine de minutes
 python src/train.py                    # logistique, feature par feature
@@ -37,6 +42,22 @@ python src/figures.py                  # figures/, après train.py et boosting.p
 
 Le premier téléchargement complet prend un moment : un appel HTTP par match.
 Tout est mis en cache, la deuxième exécution est instantanée.
+
+## L'application
+
+```bash
+python src/app_data.py                 # une fois, après dataset.py
+streamlit run src/app.py
+```
+
+Trois onglets :
+
+- **Joueurs** : buts, xG et écart de chaque joueur, avec la probabilité que
+  l'écart soit dû au hasard et le nombre de joueurs qu'on attendrait sous 5 %
+  si tous n'avaient que de la chance.
+- **Tirs d'un joueur** : carte de tirs ; un clic sur un tir montre ce que
+  chaque feature a ajouté ou retiré à son xG.
+- **Le modèle** : métriques et calibration.
 
 ## Les trois décisions de méthode
 
@@ -68,7 +89,7 @@ distance et angle ne capturent pas, et justifie les features suivantes.
 - [x] Gradient boosting, comparé à la baseline sur les mêmes métriques
 - [x] Features avancées : gardien, passe décisive, phase de jeu ; régularisation par validation croisée
 - [x] Figures : calibration, carte de tirs avec mplsoccer
-- [ ] Application Streamlit : carte de tirs, sur/sous-performance des joueurs, SHAP
+- [x] Application Streamlit : carte de tirs, sur/sous-performance des joueurs, SHAP
 - [ ] README final avec la courbe de calibration en première image
 
 ## Données

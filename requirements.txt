@@ -5,8 +5,4 @@ requests>=2.31
 matplotlib>=3.7
 mplsoccer>=1.2
 pytest>=7.4
-
-# pour la suite de la semaine
-# xgboost>=2.0
-# shap>=0.44
-# streamlit>=1.30
+streamlit>=1.40

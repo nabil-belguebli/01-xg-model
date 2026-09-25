@@ -148,14 +148,16 @@ def log_loss_by_step(metrics: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
-def shot_map(shots: pd.DataFrame, player: str, title: str, path: Path) -> None:
-    """Tirs d'un joueur : taille = xG, rempli = but."""
-    player_shots = shots[shots["player"] == player]
-    goals, misses = player_shots[player_shots["is_goal"] == 1], player_shots[player_shots["is_goal"] == 0]
+def draw_shot_map(player_shots: pd.DataFrame, title: str, highlight=None):
+    """Tirs d'un joueur : taille = xG, rempli = but. highlight : index d'un tir à entourer."""
+    goals = player_shots[player_shots["is_goal"] == 1]
+    misses = player_shots[player_shots["is_goal"] == 0]
     color = "#2a78d6"
 
+    # On coupe le bas du demi-terrain vide, sans jamais cacher un tir lointain.
+    pad_bottom = -min(18.0, max(0.0, player_shots["x"].min() - 64))
     pitch = VerticalPitch(pitch_type="statsbomb", half=True, pitch_color=SURFACE,
-                          line_color=BASELINE, linewidth=1, pad_bottom=-18)
+                          line_color=BASELINE, linewidth=1, pad_bottom=pad_bottom)
     fig, ax = pitch.draw(figsize=(7, 6))
 
     def size(xg):
@@ -165,6 +167,10 @@ def shot_map(shots: pd.DataFrame, player: str, title: str, path: Path) -> None:
                   edgecolor=MUTED, linewidth=1.5, ax=ax, zorder=2)
     pitch.scatter(goals["x"], goals["y"], s=size(goals["xg"]), color=color,
                   edgecolor=SURFACE, linewidth=2, ax=ax, zorder=3)
+    if highlight is not None:
+        shot = player_shots.loc[highlight]
+        pitch.scatter(shot["x"], shot["y"], s=size(shot["xg"]) * 2.2 + 150, facecolor="none",
+                      edgecolor=INK, linewidth=2.5, ax=ax, zorder=4)
 
     handles = [
         Line2D([], [], marker="o", linestyle="", markersize=9, color=color, label="But"),
@@ -182,6 +188,11 @@ def shot_map(shots: pd.DataFrame, player: str, title: str, path: Path) -> None:
     n_goals, total_xg = int(player_shots["is_goal"].sum()), player_shots["xg"].sum()
     ax.set_title(f"{title}\n{len(player_shots)} tirs, {n_goals} buts pour "
                  f"{total_xg:.1f} xG".replace(".", ","), loc="left", fontsize=12, color=INK)
+    return fig
+
+
+def shot_map(shots: pd.DataFrame, player: str, title: str, path: Path) -> None:
+    fig = draw_shot_map(shots[shots["player"] == player], title)
     fig.savefig(path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 

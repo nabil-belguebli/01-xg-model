@@ -1,0 +1,8 @@
+# Thème clair : les figures matplotlib ont un fond clair.
+[theme]
+base = "light"
+backgroundColor = "#fcfcfb"
+primaryColor = "#2a78d6"
+
+[browser]
+gatherUsageStats = false
