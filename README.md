@@ -3,6 +3,9 @@
 Estimer la proba que le tir d'un match de football termine au fond du but.
 Comparaison avec StatsBomb.
 
+Les notions et les résultats sont expliqués pas à pas dans
+[`rapport/rapport.txt`](rapport/rapport.txt). Ce README sert à faire tourner le code.
+
 ## Ce qu'il y a dans chaque fichier
 
 | Fichier | Rôle |
@@ -11,6 +14,7 @@ Comparaison avec StatsBomb.
 | `src/features.py` | Distance, angle entre les poteaux, défenseurs dans le triangle de tir |
 | `src/dataset.py` | Parcourt les matchs, aplatit chaque tir en une ligne, écrit `data/shots.csv` |
 | `src/train.py` | Logistique enrichie feature par feature, métriques, calibration, comparaison à l'xG StatsBomb |
+| `src/boosting.py` | Gradient boosting réglé par validation croisée, bootstrap par match contre la logistique et StatsBomb |
 | `tests/test_features.py` | Géométrie : une erreur de signe fausse tout sans lever d'exception |
 
 ## Démarrage
@@ -23,7 +27,8 @@ pip install -r requirements.txt
 python tests/test_features.py          # 9 tests, doit passer avant tout le reste
 python src/dataset.py --limit 5        # essai rapide : 5 matchs par compétition
 python src/dataset.py                  # le jeu complet, compter une dizaine de minutes
-python src/train.py
+python src/train.py                    # logistique, feature par feature
+python src/boosting.py                 # gradient boosting, une à deux minutes
 ```
 
 Le premier téléchargement complet prend un moment : un appel HTTP par match.
@@ -56,7 +61,7 @@ distance et angle ne capturent pas, et justifie les features suivantes.
 - [x] Distance, angle, défenseurs dans le triangle (gardien compté comme défenseur)
 - [x] Baseline logistique, métriques, calibration
 - [x] Features catégorielles : partie du corps, situation de jeu, première intention
-- [ ] Gradient boosting, comparé à la baseline sur les mêmes métriques
+- [x] Gradient boosting, comparé à la baseline sur les mêmes métriques
 - [ ] Carte de tirs avec mplsoccer
 - [ ] Application Streamlit : carte de tirs, sur/sous-performance des joueurs, SHAP
 - [ ] README final avec la courbe de calibration en première image
