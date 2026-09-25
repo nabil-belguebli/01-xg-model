@@ -1,4 +1,4 @@
-"""Baseline : régression logistique sur distance et angle."""
+"""Régression logistique : baseline distance + angle, puis ajout des features une à une."""
 
 from __future__ import annotations
 
@@ -7,15 +7,26 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.calibration import calibration_curve
+from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "shots.csv"
 REPORTS = Path(__file__).resolve().parent.parent / "reports"
 
 BASELINE_FEATURES = ["distance", "angle"]
+
+# Ajouts cumulatifs : chaque ligne garde les features des précédentes.
+# (libellé, numériques, catégorielles)
+FEATURE_STEPS = [
+    ("distance + angle", BASELINE_FEATURES, []),
+    ("+ partie du corps", [], ["body_part"]),
+    ("+ type de tir", [], ["shot_type", "technique"]),
+    ("+ première intention, pression", ["first_time", "under_pressure"], []),
+    ("+ défenseurs dans le triangle", ["defenders_in_triangle"], []),
+]
 
 
 def split_by_match(df: pd.DataFrame, test_fraction: float = 0.25, seed: int = 0):
@@ -53,6 +64,22 @@ def calibration_table(y_true, y_prob, n_bins: int = 10) -> pd.DataFrame:
     })
 
 
+def build_model(numeric: list[str], categorical: list[str]) -> Pipeline:
+    """Numériques centrées-réduites, catégorielles en one-hot.
+
+    Les catégories de moins de 20 tirs (lob, retourné...) sont regroupées :
+    un coefficient estimé sur 3 tirs ne serait que du bruit.
+    """
+    columns = [("num", StandardScaler(), numeric)]
+    if categorical:
+        columns.append(("cat", OneHotEncoder(min_frequency=20, handle_unknown="infrequent_if_exist",
+                                             sparse_output=False), categorical))
+    return Pipeline([
+        ("prep", ColumnTransformer(columns)),
+        ("logreg", LogisticRegression(max_iter=1000)),
+    ])
+
+
 def main():
     df = pd.read_csv(DATA)
 
@@ -63,32 +90,40 @@ def main():
     print(f"train : {len(train)} tirs / {train['match_id'].nunique()} matchs")
     print(f"test  : {len(test)} tirs / {test['match_id'].nunique()} matchs")
 
-    model = Pipeline([
-        ("scale", StandardScaler()),
-        ("logreg", LogisticRegression(max_iter=1000)),
-    ])
-    model.fit(train[BASELINE_FEATURES], train["is_goal"])
-
-    y_prob = model.predict_proba(test[BASELINE_FEATURES])[:, 1]
-    evaluate(test["is_goal"], y_prob, "Baseline logistique (distance + angle)")
-
     has_reference = test["statsbomb_xg"].notna()  # référence à battre
+    results = {}
     if has_reference.any():
-        evaluate(test.loc[has_reference, "is_goal"],
-                 test.loc[has_reference, "statsbomb_xg"],
-                 "xG officiel StatsBomb")
+        results["xG officiel StatsBomb"] = evaluate(test.loc[has_reference, "is_goal"],
+                                                    test.loc[has_reference, "statsbomb_xg"],
+                                                    "xG officiel StatsBomb")
 
-    print("\nCalibration de la baseline")
-    table = calibration_table(test["is_goal"], y_prob)
-    print(table.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
+    numeric, categorical = [], []
+    probabilities = {}
+    for label, new_numeric, new_categorical in FEATURE_STEPS:
+        numeric, categorical = numeric + new_numeric, categorical + new_categorical
+        model = build_model(numeric, categorical)
+        model.fit(train, train["is_goal"])
+        probabilities[label] = model.predict_proba(test)[:, 1]
+        results[label] = evaluate(test["is_goal"], probabilities[label], f"Logistique : {label}")
+
+    print("\nRécapitulatif (plus bas = mieux, sauf AUC)")
+    summary = pd.DataFrame(results).T
+    print(summary.to_string(float_format=lambda v: f"{v:.4f}"))
 
     REPORTS.mkdir(exist_ok=True)
-    table.to_csv(REPORTS / "calibration_baseline.csv", index=False)
+    summary.to_csv(REPORTS / "metrics_logistique.csv", index_label="modele")
 
-    print("\nCoefficients (variables centrées-réduites)")
-    for name, coefficient in zip(BASELINE_FEATURES, model.named_steps["logreg"].coef_[0]):
-        print(f"  {name:<10} {coefficient:+.3f}")  # distance < 0, angle > 0 attendus
+    for filename, label in [("calibration_baseline.csv", FEATURE_STEPS[0][0]),
+                            ("calibration_logistique.csv", FEATURE_STEPS[-1][0])]:
+        print(f"\nCalibration : {label}")
+        table = calibration_table(test["is_goal"], probabilities[label])
+        print(table.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
+        table.to_csv(REPORTS / filename, index=False)
 
+    print("\nCoefficients du modèle complet (variables centrées-réduites)")
+    names = model.named_steps["prep"].get_feature_names_out()
+    for name, coefficient in zip(names, model.named_steps["logreg"].coef_[0]):
+        print(f"  {name.split('__')[1]:<32} {coefficient:+.3f}")
 
 if __name__ == "__main__":
     main()

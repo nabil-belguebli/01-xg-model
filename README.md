@@ -10,7 +10,7 @@ Comparaison avec StatsBomb.
 | `src/statsbomb.py` | Télécharge les JSON du dépôt open-data et les met en cache dans `data/raw/` |
 | `src/features.py` | Distance, angle entre les poteaux, défenseurs dans le triangle de tir |
 | `src/dataset.py` | Parcourt les matchs, aplatit chaque tir en une ligne, écrit `data/shots.csv` |
-| `src/train.py` | Baseline logistique, métriques, courbe de calibration, comparaison à l'xG StatsBomb |
+| `src/train.py` | Logistique enrichie feature par feature, métriques, calibration, comparaison à l'xG StatsBomb |
 | `tests/test_features.py` | Géométrie : une erreur de signe fausse tout sans lever d'exception |
 
 ## Démarrage
@@ -55,7 +55,7 @@ distance et angle ne capturent pas, et justifie les features suivantes.
 - [x] Chargement des données et mise en cache
 - [x] Distance, angle, défenseurs dans le triangle (gardien compté comme défenseur)
 - [x] Baseline logistique, métriques, calibration
-- [ ] Features catégorielles : partie du corps, situation de jeu, première intention
+- [x] Features catégorielles : partie du corps, situation de jeu, première intention
 - [ ] Gradient boosting, comparé à la baseline sur les mêmes métriques
 - [ ] Carte de tirs avec mplsoccer
 - [ ] Application Streamlit : carte de tirs, sur/sous-performance des joueurs, SHAP
